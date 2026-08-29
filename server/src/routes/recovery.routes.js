@@ -2,7 +2,8 @@ const express = require("express");
 
 const {
   evaluateTransaction,
-  generateAIRecovery
+  generateAIRecovery,
+  executeAIRecovery,
 } = require(
   "../controllers/recovery.controller"
 );
@@ -17,6 +18,11 @@ router.get(
 router.get(
   "/ai/:transactionId",
   generateAIRecovery
+);
+
+router.post(
+  "/execute/:transactionId",
+  executeAIRecovery
 );
 
 module.exports = router;

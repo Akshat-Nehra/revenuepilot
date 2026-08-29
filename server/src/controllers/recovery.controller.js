@@ -12,6 +12,11 @@ const {
   generateRecoveryRecommendation,
 } = require("../services/aiRecoveryAgent");
 
+const {
+  executeRecovery,
+} = require(
+  "../services/recoveryExecution"
+);
 
 // ==========================================
 // Evaluate Recovery Eligibility
@@ -207,7 +212,114 @@ const generateAIRecovery = async (req, res) => {
   }
 };
 
+const executeAIRecovery = async (
+  req,
+  res
+) => {
+  try {
 
+    const { transactionId } =
+      req.params;
+
+    const transaction =
+      await Transaction.findOne({
+        transactionId,
+      });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Transaction not found",
+      });
+    }
+
+    const risk =
+      calculateRisk(transaction);
+
+    const eligibility =
+      evaluateRecoveryEligibility(
+        transaction,
+        risk
+      );
+
+    // ==================================
+    // Eligibility gate
+    // ==================================
+
+    if (
+      eligibility.decision !==
+      "ELIGIBLE"
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Transaction is not eligible for automated recovery",
+
+        eligibility,
+      });
+    }
+
+    // ==================================
+    // Generate AI recommendation
+    // ==================================
+
+    const recommendation =
+      await generateRecoveryRecommendation({
+        transaction:
+          transaction.toObject(),
+
+        risk,
+
+        eligibility,
+      });
+
+    // ==================================
+    // Execute through policy layer
+    // ==================================
+
+    const result =
+      await executeRecovery({
+        transaction,
+
+        risk,
+
+        eligibility,
+
+        recommendation,
+      });
+
+    return res.json({
+      success:
+        result.success,
+
+      transactionId,
+
+      recommendation,
+
+      execution:
+        result,
+    });
+
+  } catch (error) {
+
+    console.error(
+      "Recovery execution error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Failed to execute recovery",
+
+      error:
+        error.message,
+    });
+  }
+};
 // ==========================================
 // EXPORTS
 // ==========================================
@@ -215,4 +327,5 @@ const generateAIRecovery = async (req, res) => {
 module.exports = {
   evaluateTransaction,
   generateAIRecovery,
+  executeAIRecovery,
 };
