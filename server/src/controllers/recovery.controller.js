@@ -8,6 +8,15 @@ const {
   evaluateRecoveryEligibility,
 } = require("../services/recoveryEngine");
 
+const {
+  generateRecoveryRecommendation,
+} = require("../services/aiRecoveryAgent");
+
+
+// ==========================================
+// Evaluate Recovery Eligibility
+// ==========================================
+
 const evaluateTransaction = async (req, res) => {
   try {
     const { transactionId } = req.params;
@@ -50,6 +59,7 @@ const evaluateTransaction = async (req, res) => {
 
       recovery: eligibility,
     });
+
   } catch (error) {
     console.error(
       "Recovery evaluation error:",
@@ -64,6 +74,145 @@ const evaluateTransaction = async (req, res) => {
   }
 };
 
+
+// ==========================================
+// AI Recovery Recommendation
+// ==========================================
+
+const generateAIRecovery = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+
+    // Find transaction
+    const transaction =
+      await Transaction.findOne({
+        transactionId,
+      });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: "Transaction not found",
+      });
+    }
+
+    // Calculate deterministic risk
+    const risk =
+      calculateRisk(transaction);
+
+    // Evaluate deterministic eligibility
+    const eligibility =
+      evaluateRecoveryEligibility(
+        transaction,
+        risk
+      );
+
+    // ======================================
+    // IMPORTANT:
+    // AI cannot bypass the policy engine
+    // ======================================
+
+    if (
+      eligibility.decision !== "ELIGIBLE"
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "AI recovery is not allowed for this transaction",
+
+        eligibility,
+      });
+    }
+
+    // ======================================
+    // Ask AI for recommendation
+    // ======================================
+
+    const recommendation =
+      await generateRecoveryRecommendation({
+        transaction:
+          transaction.toObject(),
+
+        risk,
+
+        eligibility,
+      });
+
+    // ======================================
+    // Validate AI output
+    // ======================================
+
+    const allowedActions = [
+      "CREATE_PAYMENT_LINK",
+      "SEND_REMINDER",
+      "NO_ACTION",
+    ];
+
+    if (
+      !allowedActions.includes(
+        recommendation.action
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "AI returned an unsupported action",
+
+        recommendation,
+      });
+    }
+
+    // ======================================
+    // Return result
+    // ======================================
+
+    return res.json({
+      success: true,
+
+      transactionId,
+
+      transaction: {
+        amount: transaction.amount,
+        status: transaction.status,
+      },
+
+      risk: {
+        score: risk.score,
+        level: risk.level,
+        reasons: risk.reasons,
+      },
+
+      eligibility,
+
+      aiRecommendation:
+        recommendation,
+    });
+
+  } catch (error) {
+    console.error(
+      "AI recovery error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Failed to generate AI recovery recommendation",
+
+      error: error.message,
+    });
+  }
+};
+
+
+// ==========================================
+// EXPORTS
+// ==========================================
+
 module.exports = {
   evaluateTransaction,
+  generateAIRecovery,
 };
