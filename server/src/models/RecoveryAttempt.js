@@ -65,6 +65,7 @@ const recoveryAttemptSchema =
         enum: [
           "created",
           "payment_pending",
+          "reminder_sent",
           "recovered",
           "failed",
           "stopped",
@@ -96,6 +97,17 @@ const recoveryAttemptSchema =
         type: String,
         default: null,
       },
+
+      attemptNumber: {
+         type: Number,
+         required: true,
+        },
+
+    idempotencyKey: {
+         type: String,
+        required: true,
+         unique: true,
+    },
     },
     {
       timestamps: true,

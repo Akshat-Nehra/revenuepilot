@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 
+const app = express();
+
 const paymentRoutes = require("./routes/payment.routes");
 
 const transactionRoutes = require(
@@ -15,10 +17,19 @@ const recoveryRoutes = require(
   "./routes/recovery.routes"
 );
 
-const app = express();
+const webhookRoutes = require(
+  "./routes/webhook.routes"
+);
+
 
 app.use(cors());
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 app.get("/health", (req, res) => {
   res.json({
@@ -34,5 +45,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/metrics", metricsRoutes);
 
 app.use("/api/recovery", recoveryRoutes);
+
+app.use("/api/webhooks", webhookRoutes);
 
 module.exports = app;

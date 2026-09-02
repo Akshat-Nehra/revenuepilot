@@ -1,18 +1,15 @@
-const razorpay = require(
-  "../config/razorpay"
-);
+const razorpay = require("../config/razorpay");
 
-const RecoveryAttempt = require(
-  "../models/RecoveryAttempt"
-);
-
-const Transaction = require(
-  "../models/Transaction"
-);
+const RecoveryAttempt = require("../models/RecoveryAttempt");
 
 const {
   validateRecoveryAction,
 } = require("./actionValidator");
+
+const {
+  checkRecoveryGuard,
+} = require("./recoveryGuard");
+
 
 const executeRecovery = async ({
   transaction,
@@ -36,15 +33,32 @@ const executeRecovery = async ({
   if (!validation.approved) {
     return {
       success: false,
-
       status: "blocked",
-
       reason: validation.reason,
     };
   }
 
+
   // ======================================
-  // 2. Create recovery attempt
+  // 2. Check recovery guard
+  // ======================================
+
+  const guard =
+    await checkRecoveryGuard(
+      transaction.transactionId
+    );
+
+  if (!guard.allowed) {
+    return {
+      success: false,
+      status: "stopped",
+      reason: guard.reason,
+    };
+  }
+
+
+  // ======================================
+  // 3. Create recovery attempt
   // ======================================
 
   const recoveryAttempt =
@@ -57,6 +71,12 @@ const executeRecovery = async ({
 
       amount:
         transaction.amount,
+
+      attemptNumber:
+        guard.attemptNumber,
+
+      idempotencyKey:
+        `${transaction.transactionId}-${guard.attemptNumber}`,
 
       action:
         recommendation.action,
@@ -82,8 +102,9 @@ const executeRecovery = async ({
       status: "created",
     });
 
+
   // ======================================
-  // 3. CREATE PAYMENT LINK
+  // 4. CREATE PAYMENT LINK
   // ======================================
 
   if (
@@ -95,6 +116,7 @@ const executeRecovery = async ({
 
       const paymentLink =
         await razorpay.paymentLink.create({
+
           amount:
             Math.round(
               transaction.amount * 100
@@ -132,8 +154,9 @@ const executeRecovery = async ({
           reminder_enable: false,
         });
 
+
       // ==================================
-      // 4. Update recovery attempt
+      // 5. Update recovery attempt
       // ==================================
 
       recoveryAttempt.status =
@@ -147,14 +170,16 @@ const executeRecovery = async ({
 
       await recoveryAttempt.save();
 
+
       // ==================================
-      // 5. Update transaction
+      // 6. Update transaction
       // ==================================
 
       transaction.recoveryStatus =
         "in_progress";
 
       await transaction.save();
+
 
       return {
         success: true,
@@ -196,6 +221,68 @@ const executeRecovery = async ({
     }
   }
 
+
+  // ======================================
+  // 7. SEND REMINDER
+  // ======================================
+
+  if (
+    recommendation.action ===
+    "SEND_REMINDER"
+  ) {
+
+    recoveryAttempt.status =
+      "reminder_sent";
+
+    await recoveryAttempt.save();
+
+    return {
+      success: true,
+
+      status:
+        "reminder_sent",
+
+      recoveryAttemptId:
+        recoveryAttempt._id,
+
+      message:
+        "Recovery reminder scheduled successfully",
+    };
+  }
+
+
+  // ======================================
+  // 8. NO ACTION
+  // ======================================
+
+  if (
+    recommendation.action ===
+    "NO_ACTION"
+  ) {
+
+    recoveryAttempt.status =
+      "stopped";
+
+    await recoveryAttempt.save();
+
+    return {
+      success: true,
+
+      status: "stopped",
+
+      recoveryAttemptId:
+        recoveryAttempt._id,
+
+      message:
+        "AI determined that no recovery action is required",
+    };
+  }
+
+
+  // ======================================
+  // 9. Unsupported action
+  // ======================================
+
   return {
     success: false,
 
@@ -205,6 +292,7 @@ const executeRecovery = async ({
       "Recovery action is not executable yet",
   };
 };
+
 
 module.exports = {
   executeRecovery,
