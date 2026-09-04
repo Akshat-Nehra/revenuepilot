@@ -1,6 +1,8 @@
 const crypto = require("crypto");
 
 const RecoveryAttempt = require("../models/RecoveryAttempt");
+const Transaction = require("../models/Transaction");
+const AuditLog = require("../models/AuditLog");
 
 const handleRazorpayWebhook = async (req, res) => {
   try {
@@ -154,6 +156,36 @@ const handleRazorpayWebhook = async (req, res) => {
 
       await recoveryAttempt.save();
 
+      // Update Transaction model in database
+      const txn = await Transaction.findOne({ transactionId: recoveryAttempt.transactionId });
+      if (txn) {
+        txn.recoveryStatus = "recovered";
+        txn.status = "successful";
+        await txn.save();
+      }
+
+      // Record immutable audit logs for captured payment & revenue recovered
+      await AuditLog.create({
+        transactionId: recoveryAttempt.transactionId,
+        event: "PAYMENT_CAPTURED",
+        actor: "Razorpay Webhook",
+        actorRole: "WEBHOOK",
+        decision: "CAPTURED",
+        status: "SUCCESS",
+        details: `Payment of ₹${payment.amount / 100} captured successfully via Razorpay (Payment ID: ${payment.id}).`,
+        metadata: { paymentId: payment.id, amount: payment.amount / 100 },
+      }).catch((e) => console.error("Audit log error:", e));
+
+      await AuditLog.create({
+        transactionId: recoveryAttempt.transactionId,
+        event: "REVENUE_RECOVERED",
+        actor: "RevenuePilot Engine",
+        actorRole: "SYSTEM",
+        decision: "RECOVERED",
+        status: "SUCCESS",
+        details: `Revenue marked as fully recovered (+₹${payment.amount / 100}) for transaction ${recoveryAttempt.transactionId}.`,
+      }).catch((e) => console.error("Audit log error:", e));
+
       console.log(
         `💰 RECOVERED ₹${payment.amount / 100}`
       );
@@ -162,7 +194,7 @@ const handleRazorpayWebhook = async (req, res) => {
         success: true,
         message:
           "Recovery marked as successful",
-        transactionId,
+        transactionId: recoveryAttempt.transactionId,
         recoveredAmount:
           payment.amount / 100,
       });

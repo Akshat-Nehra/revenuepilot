@@ -4,25 +4,29 @@ const {
   evaluateTransaction,
   generateAIRecovery,
   executeAIRecovery,
-} = require(
-  "../controllers/recovery.controller"
-);
+  getRecoveryAttempts,
+  getRecoveryAttemptById,
+  getAIDecisions,
+} = require("../controllers/recovery.controller");
 
 const router = express.Router();
 
-router.get(
-  "/evaluate/:transactionId",
-  evaluateTransaction
-);
+// List all recovery attempts
+router.get("/", getRecoveryAttempts);
 
-router.get(
-  "/ai/:transactionId",
-  generateAIRecovery
-);
+// AI decisions list
+router.get("/decisions", getAIDecisions);
+router.get("/ai-decisions", getAIDecisions);
 
-router.post(
-  "/execute/:transactionId",
-  executeAIRecovery
-);
+// Recovery evaluation & recommendation by transaction ID
+router.get("/evaluate/:transactionId", evaluateTransaction);
+router.get("/ai/:transactionId", generateAIRecovery);
+
+// Execute recovery action
+router.post("/execute/:transactionId", executeAIRecovery);
+router.post("/:transactionId", executeAIRecovery);
+
+// Single recovery attempt by ID
+router.get("/:id", getRecoveryAttemptById);
 
 module.exports = router;

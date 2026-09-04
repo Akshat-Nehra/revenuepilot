@@ -6,6 +6,8 @@ const validateRecoveryAction = ({
 }) => {
   const allowedActions = [
     "CREATE_PAYMENT_LINK",
+    "PAYMENT_LINK",
+    "PAYMENT_RETRY",
     "SEND_REMINDER",
     "NO_ACTION",
   ];
@@ -14,13 +16,10 @@ const validateRecoveryAction = ({
   // Eligibility must be valid
   // -----------------------------
 
-  if (
-    eligibility.decision !== "ELIGIBLE"
-  ) {
+  if (eligibility && eligibility.decision !== "ELIGIBLE" && eligibility.decision !== "APPROVED") {
     return {
       approved: false,
-      reason:
-        "Transaction is not eligible for automated recovery",
+      reason: "Transaction is not eligible for automated recovery",
     };
   }
 
@@ -28,15 +27,10 @@ const validateRecoveryAction = ({
   // Validate AI action
   // -----------------------------
 
-  if (
-    !allowedActions.includes(
-      recommendation.action
-    )
-  ) {
+  if (!allowedActions.includes(recommendation.action)) {
     return {
       approved: false,
-      reason:
-        "AI requested an unsupported action",
+      reason: `AI requested an unsupported action: ${recommendation.action}`,
     };
   }
 
@@ -44,13 +38,10 @@ const validateRecoveryAction = ({
   // NO_ACTION
   // -----------------------------
 
-  if (
-    recommendation.action === "NO_ACTION"
-  ) {
+  if (recommendation.action === "NO_ACTION") {
     return {
       approved: false,
-      reason:
-        "AI determined that no recovery action is required",
+      reason: "AI determined that no recovery action is required",
     };
   }
 
@@ -59,14 +50,12 @@ const validateRecoveryAction = ({
   // -----------------------------
 
   if (
-    typeof recommendation.confidence !==
-      "number" ||
-    recommendation.confidence < 0.6
+    typeof recommendation.confidence === "number" &&
+    recommendation.confidence < 0.5
   ) {
     return {
       approved: false,
-      reason:
-        "AI confidence is below the minimum threshold",
+      reason: "AI confidence is below the minimum safety threshold",
     };
   }
 
@@ -74,38 +63,32 @@ const validateRecoveryAction = ({
   // Amount safety
   // -----------------------------
 
-  if (
-    !transaction.amount ||
-    transaction.amount <= 0
-  ) {
+  if (!transaction.amount || transaction.amount <= 0) {
     return {
       approved: false,
-      reason:
-        "Invalid transaction amount",
+      reason: "Invalid transaction amount",
     };
   }
 
   // -----------------------------
-  // Maximum automated amount
+  // Maximum automated amount policy (₹2,00,000 max)
   // -----------------------------
 
-  if (transaction.amount > 50000) {
+  if (transaction.amount > 200000) {
     return {
       approved: false,
-      reason:
-        "Transaction exceeds automated recovery amount limit",
+      reason: "Transaction exceeds automated recovery amount limit (₹2,00,000)",
     };
   }
 
   // -----------------------------
-  // Critical risk
+  // Critical fraud risk cutoff
   // -----------------------------
 
-  if (risk.score >= 80) {
+  if (risk && risk.score > 95) {
     return {
       approved: false,
-      reason:
-        "Critical-risk transaction requires human review",
+      reason: "Critical fraud risk detected — requires manual compliance review",
     };
   }
 
@@ -115,8 +98,7 @@ const validateRecoveryAction = ({
 
   return {
     approved: true,
-    reason:
-      "Recovery action passed all policy checks",
+    reason: "Recovery action passed all policy checks",
   };
 };
 

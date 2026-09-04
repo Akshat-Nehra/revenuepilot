@@ -83,6 +83,21 @@ const recoveryAttemptSchema =
         default: null,
       },
 
+      paymentLinkId: {
+        type: String,
+        default: null,
+      },
+
+      paymentLinkUrl: {
+        type: String,
+        default: null,
+      },
+
+      short_url: {
+        type: String,
+        default: null,
+      },
+
       recoveredAmount: {
         type: Number,
         default: 0,
@@ -107,6 +122,22 @@ const recoveryAttemptSchema =
          type: String,
         required: true,
          unique: true,
+    },
+
+    executedBy: {
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      name: {
+        type: String,
+        default: "System",
+      },
+      role: {
+        type: String,
+        default: "SYSTEM",
+      },
     },
     },
     {
