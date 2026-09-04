@@ -21,7 +21,7 @@ import {
 
 // Base URL with clean trailing slash stripping
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
-const rawUrl = env.VITE_API_BASE_URL || 'http://localhost:5000';
+const rawUrl = env.VITE_API_BASE_URL || 'https://revenuepilot-api.onrender.com';
 export const API_BASE_URL = rawUrl.replace(/\/+$/, '');
 export const DEMO_MODE = String(env.VITE_DEMO_MODE || 'false').toLowerCase() === 'true';
 
