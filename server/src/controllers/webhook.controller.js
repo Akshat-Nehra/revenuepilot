@@ -1,279 +1,145 @@
 const crypto = require("crypto");
-
 const RecoveryAttempt = require("../models/RecoveryAttempt");
 const Transaction = require("../models/Transaction");
 const AuditLog = require("../models/AuditLog");
+
+const safeEqual = (received, expected) => {
+  if (!received || !expected || received.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+};
 
 const handleRazorpayWebhook = async (req, res) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-    console.log("Webhook secret loaded:", !!secret);
-    console.log("Raw body available:", !!req.rawBody);
-    console.log("Raw body length:", req.rawBody?.length);
-    console.log(
-    "Signature received:",
-     req.headers["x-razorpay-signature"]
-    );
-
-    if (!signature || !secret) {
-      return res.status(400).json({
-        success: false,
-        message: "Webhook signature configuration missing",
-      });
+    if (!secret) {
+      console.error("[WEBHOOK] RAZORPAY_WEBHOOK_SECRET is not configured");
+      return res.status(500).json({ success: false, message: "Webhook secret is not configured" });
     }
 
-    // Debug information - do NOT print the secret
-    console.log("Webhook secret loaded:", !!secret);
-    console.log("Raw body available:", !!req.rawBody);
-    console.log("Raw body length:", req.rawBody?.length);
-
-    if (!req.rawBody) {
-      return res.status(400).json({
-        success: false,
-        message: "Raw webhook body missing",
-      });
+    if (!signature || !req.rawBody) {
+      return res.status(400).json({ success: false, message: "Webhook signature or raw body missing" });
     }
 
-    // Verify Razorpay webhook signature
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(req.rawBody)
-      .digest("hex");
-
-    // Safe signature comparison
-    const isValidSignature =
-      signature.length === expectedSignature.length &&
-      crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature)
-      );
-
-    if (!isValidSignature) {
-      console.log("❌ Invalid Razorpay webhook signature");
-
-      return res.status(400).json({
-        success: false,
-        message: "Invalid webhook signature",
-      });
+    const expected = crypto.createHmac("sha256", secret).update(req.rawBody).digest("hex");
+    if (!safeEqual(signature, expected)) {
+      console.error("[WEBHOOK] Invalid signature");
+      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
     }
 
-    // Signature verified
-    const event = req.body.event;
+    const event = req.body?.event;
+    console.log("[WEBHOOK] Verified event:", event);
 
-    console.log("✅ Razorpay webhook received:", event);
+    if (event === "payment.captured" || event === "payment_link.paid") {
+      const payment = req.body?.payload?.payment?.entity || null;
+      const paymentLink = req.body?.payload?.payment_link?.entity || null;
 
-    // =====================================================
-    // PAYMENT CAPTURED / PAYMENT LINK PAID
-    // =====================================================
+      // payment.captured normally carries payment.entity; payment_link.paid carries payment_link.entity.
+      const notes = payment?.notes || paymentLink?.notes || {};
+      const paymentLinkId = paymentLink?.id || payment?.payment_link_id || payment?.payment_link?.id || null;
+      const transactionId = notes.transactionId || notes.transaction_id || null;
+      const recoveryAttemptId = notes.recoveryAttemptId || notes.recovery_attempt_id || null;
+      const amountPaise = Number(payment?.amount ?? paymentLink?.amount ?? 0);
+      const amount = amountPaise / 100;
 
-    if (
-      event === "payment.captured" ||
-      event === "payment_link.paid"
-    ) {
-      const payment =
-        req.body.payload?.payment?.entity;
-
-      if (!payment) {
-        return res.status(400).json({
-          success: false,
-          message: "Payment data missing",
+      let attempt = null;
+      if (recoveryAttemptId) attempt = await RecoveryAttempt.findById(recoveryAttemptId);
+      if (!attempt && paymentLinkId) {
+        attempt = await RecoveryAttempt.findOne({
+          $or: [
+            { razorpayPaymentLinkId: paymentLinkId },
+            { paymentLinkId: paymentLinkId },
+          ],
         });
       }
-
-      const transactionId =
-        payment.notes?.transactionId;
-
-      const recoveryAttemptId =
-        payment.notes?.recoveryAttemptId;
-
-      console.log("Transaction:", transactionId);
-      console.log(
-        "Recovery Attempt:",
-        recoveryAttemptId
-      );
-
-      let recoveryAttempt = null;
-
-      // First try using the exact RecoveryAttempt ID
-      if (recoveryAttemptId) {
-        recoveryAttempt =
-          await RecoveryAttempt.findById(
-            recoveryAttemptId
-          );
+      if (!attempt && transactionId) {
+        attempt = await RecoveryAttempt.findOne({
+          transactionId,
+          status: { $in: ["created", "payment_pending"] },
+        }).sort({ createdAt: -1 });
       }
 
-      // Fallback: find by transaction ID
-      if (!recoveryAttempt && transactionId) {
-        recoveryAttempt =
-          await RecoveryAttempt.findOne({
-            transactionId,
-            status: "payment_pending",
-          }).sort({
-            createdAt: -1,
-          });
-      }
-
-      if (!recoveryAttempt) {
-        console.log(
-          "⚠️ Recovery attempt not found"
-        );
-
-        return res.json({
-          success: true,
-          message:
-            "Payment received but recovery attempt not found",
+      if (!attempt) {
+        console.warn("[WEBHOOK] Payment received but matching recovery attempt was not found", {
+          event, transactionId, recoveryAttemptId, paymentLinkId, paymentId: payment?.id || null,
         });
+        // Acknowledge the webhook so Razorpay does not repeatedly retry an event we cannot correlate.
+        return res.json({ success: true, message: "Webhook received; recovery attempt not found" });
       }
 
-      // =====================================================
-      // IDEMPOTENCY PROTECTION
-      // =====================================================
-
-      if (recoveryAttempt.status === "recovered") {
-        console.log(
-          "ℹ️ Recovery already processed"
-        );
-
-        return res.json({
-          success: true,
-          message: "Recovery already processed",
-        });
+      if (attempt.status === "recovered") {
+        return res.json({ success: true, message: "Recovery already processed", transactionId: attempt.transactionId });
       }
 
-      // =====================================================
-      // MARK RECOVERY AS SUCCESSFUL
-      // =====================================================
+      if (amount <= 0) {
+        console.error("[WEBHOOK] Invalid payment amount", { amountPaise });
+        return res.status(400).json({ success: false, message: "Invalid payment amount" });
+      }
 
-      recoveryAttempt.status = "recovered";
+      attempt.status = "recovered";
+      attempt.recoveredAmount = amount;
+      attempt.recoveredAt = new Date();
+      if (paymentLinkId) {
+        attempt.razorpayPaymentLinkId = paymentLinkId;
+        attempt.paymentLinkId = paymentLinkId;
+      }
+      await attempt.save();
 
-      recoveryAttempt.recoveredAmount =
-        payment.amount / 100;
-
-      recoveryAttempt.recoveredAt =
-        new Date();
-
-      await recoveryAttempt.save();
-
-      // Update Transaction model in database
-      const txn = await Transaction.findOne({ transactionId: recoveryAttempt.transactionId });
+      const txn = await Transaction.findOne({ transactionId: attempt.transactionId });
       if (txn) {
         txn.recoveryStatus = "recovered";
         txn.status = "successful";
         await txn.save();
       }
 
-      // Record immutable audit logs for captured payment & revenue recovered
       await AuditLog.create({
-        transactionId: recoveryAttempt.transactionId,
+        transactionId: attempt.transactionId,
         event: "PAYMENT_CAPTURED",
         actor: "Razorpay Webhook",
         actorRole: "WEBHOOK",
         decision: "CAPTURED",
         status: "SUCCESS",
-        details: `Payment of ₹${payment.amount / 100} captured successfully via Razorpay (Payment ID: ${payment.id}).`,
-        metadata: { paymentId: payment.id, amount: payment.amount / 100 },
+        details: `Payment of ₹${amount} captured via Razorpay.`,
+        metadata: { event, paymentId: payment?.id || null, paymentLinkId, amount },
       }).catch((e) => console.error("Audit log error:", e));
 
       await AuditLog.create({
-        transactionId: recoveryAttempt.transactionId,
+        transactionId: attempt.transactionId,
         event: "REVENUE_RECOVERED",
         actor: "RevenuePilot Engine",
         actorRole: "SYSTEM",
         decision: "RECOVERED",
         status: "SUCCESS",
-        details: `Revenue marked as fully recovered (+₹${payment.amount / 100}) for transaction ${recoveryAttempt.transactionId}.`,
+        details: `Revenue recovered: ₹${amount}.`,
+        metadata: { amount, paymentId: payment?.id || null, paymentLinkId },
       }).catch((e) => console.error("Audit log error:", e));
 
-      console.log(
-        `💰 RECOVERED ₹${payment.amount / 100}`
-      );
-
-      return res.json({
-        success: true,
-        message:
-          "Recovery marked as successful",
-        transactionId: recoveryAttempt.transactionId,
-        recoveredAmount:
-          payment.amount / 100,
-      });
+      console.log(`[WEBHOOK] RECOVERED ₹${amount} for ${attempt.transactionId}`);
+      return res.json({ success: true, message: "Recovery marked as successful", transactionId: attempt.transactionId, recoveredAmount: amount });
     }
-
-    // =====================================================
-    // PAYMENT FAILED
-    // =====================================================
 
     if (event === "payment.failed") {
-      const payment =
-        req.body.payload?.payment?.entity;
+      const payment = req.body?.payload?.payment?.entity;
+      const transactionId = payment?.notes?.transactionId;
+      const attempt = transactionId
+        ? await RecoveryAttempt.findOne({ transactionId, status: "payment_pending" }).sort({ createdAt: -1 })
+        : null;
 
-      if (payment) {
-        const transactionId =
-          payment.notes?.transactionId;
-
-        console.log(
-          "❌ Payment failed:",
-          transactionId
-        );
-
-        const recoveryAttempt =
-          await RecoveryAttempt.findOne({
-            transactionId,
-            status: "payment_pending",
-          }).sort({
-            createdAt: -1,
-          });
-
-        if (recoveryAttempt) {
-          recoveryAttempt.status = "failed";
-
-          recoveryAttempt.failureReason =
-            payment.error_description ||
-            "Payment failed";
-
-          await recoveryAttempt.save();
-
-          console.log(
-            "Recovery attempt marked as failed"
-          );
-        }
+      if (attempt) {
+        attempt.status = "failed";
+        attempt.failureReason = payment?.error_description || payment?.error?.description || "Payment failed";
+        await attempt.save();
       }
 
-      return res.json({
-        success: true,
-        message: "Payment failure processed",
-      });
+      return res.json({ success: true, message: "Payment failure processed" });
     }
 
-    // =====================================================
-    // OTHER EVENTS
-    // =====================================================
-
-    console.log(
-      "ℹ️ Webhook event not handled:",
-      event
-    );
-
-    return res.json({
-      success: true,
-      message: "Webhook received",
-    });
-
+    return res.json({ success: true, message: "Webhook received", event });
   } catch (error) {
-    console.error(
-      "Webhook processing error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: "Webhook processing failed",
-      error: error.message,
-    });
+    console.error("[WEBHOOK] Processing error:", error);
+    return res.status(500).json({ success: false, message: "Webhook processing failed", error: error.message });
   }
 };
 
-module.exports = {
-  handleRazorpayWebhook,
-};
+module.exports = { handleRazorpayWebhook };

@@ -23,6 +23,8 @@ const recoveryAttemptSchema =
         type: String,
         enum: [
           "CREATE_PAYMENT_LINK",
+          "PAYMENT_LINK",
+          "PAYMENT_RETRY",
           "SEND_REMINDER",
           "NO_ACTION",
         ],

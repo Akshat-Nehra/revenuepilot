@@ -16,6 +16,13 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   await connectDB();
 
+  console.log(
+    "[CONFIG] Razorpay mode:",
+    process.env.RAZORPAY_KEY_ID?.startsWith("rzp_test_")
+      ? "TEST"
+      : "LIVE/UNKNOWN"
+  );
+
   app.listen(PORT, () => {
     console.log(`RevenuePilot server running on port ${PORT}`);
   });

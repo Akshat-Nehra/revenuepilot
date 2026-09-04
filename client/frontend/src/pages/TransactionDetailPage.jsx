@@ -62,10 +62,26 @@ export default function TransactionDetailPage({ onRecoveryExecuted }) {
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      const res = await executeRecovery(txn.id || txn.transactionId);
+      const identifier = txn.transactionId || txn.id || txn._id;
+      const res = await executeRecovery(identifier);
       setIsModalOpen(false);
 
-      const paymentLinkUrl = res.data?.paymentLink || res.data?.paymentLinkUrl || res.data?.short_url || res.data?.razorpayUrl;
+      if (res.action === 'SEND_REMINDER') {
+        const updatedTxn = {
+          ...txn,
+          recoveryState: 'REMINDER_SENT',
+          attemptsCount: (txn.attemptsCount || 0) + 1,
+          lastAttemptAt: new Date().toISOString()
+        };
+        setTxn(updatedTxn);
+        setRecoverySuccessNotice(`Recovery reminder recorded! Connect an SMS/email provider for external delivery.`);
+        if (onRecoveryExecuted) {
+          onRecoveryExecuted(res);
+        }
+        return;
+      }
+
+      const paymentLinkUrl = res.paymentLink?.short_url || res.paymentLinkUrl || res.short_url || res.data?.paymentLink;
 
       if (!paymentLinkUrl) {
         throw new Error(res.message || "Backend did not return a Razorpay payment link");
@@ -78,7 +94,7 @@ export default function TransactionDetailPage({ onRecoveryExecuted }) {
         razorpayUrl: paymentLinkUrl,
         paymentLink: paymentLinkUrl,
         short_url: paymentLinkUrl,
-        razorpayLinkId: res.data?.paymentLinkId || res.data?.razorpayPaymentLinkId,
+        razorpayLinkId: res.paymentLink?.id || res.paymentLinkId || res.data?.paymentLinkId,
         attemptsCount: (txn.attemptsCount || 0) + 1,
         lastAttemptAt: new Date().toISOString()
       };
@@ -87,7 +103,7 @@ export default function TransactionDetailPage({ onRecoveryExecuted }) {
       setRecoverySuccessNotice(`Recovery initiated! Razorpay Payment Link active.`);
       
       if (onRecoveryExecuted) {
-        onRecoveryExecuted(res.data);
+        onRecoveryExecuted(res);
       }
     } catch (err) {
       alert(err.message || "Failed to execute recovery.");
@@ -128,8 +144,9 @@ export default function TransactionDetailPage({ onRecoveryExecuted }) {
 
   const isRecovered = txn.status === 'Recovered' || txn.recoveryState === 'RECOVERED';
   const isPendingPayment = (txn.status === 'Pending' && txn.razorpayUrl) || txn.recoveryState === 'PENDING';
+  const isReminderSent = txn.recoveryState === 'REMINDER_SENT' || txn.recoveryStatus === 'reminder_sent';
   const allGuardrailsPassed = txn.guardrails?.every(g => g.status === 'PASSED') ?? true;
-  const canExecute = !isRecovered && !isPendingPayment && allGuardrailsPassed;
+  const canExecute = !isRecovered && !isPendingPayment && !isReminderSent && allGuardrailsPassed;
 
   return (
     <div className="space-y-6 pb-16 animate-fade-in max-w-6xl mx-auto">
@@ -240,6 +257,30 @@ export default function TransactionDetailPage({ onRecoveryExecuted }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Reminder Sent Banner */}
+      {isReminderSent && !isRecovered && (
+        <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 space-y-3 glass-panel">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <Mail className="w-5 h-5 text-blue-400 shrink-0" />
+              <h4 className="text-sm font-bold text-blue-200">
+                Recovery Reminder Dispatched
+              </h4>
+            </div>
+            <span className="text-xs font-mono font-semibold text-blue-300">
+              Attempt #{txn.attemptsCount || 1}
+            </span>
+          </div>
+
+          <p className="text-xs text-blue-200/80 leading-relaxed">
+            A recovery reminder has been recorded for this customer. RevenuePilot is monitoring for customer response or payment completion.
+          </p>
+          <p className="text-[11px] text-slate-400">
+            ℹ️ Connect an SMS/email provider for automated external customer delivery.
+          </p>
         </div>
       )}
 

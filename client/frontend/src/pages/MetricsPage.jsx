@@ -42,43 +42,43 @@ export default function MetricsPage({ metrics, loading, error, onRetry }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Total At Risk</span>
-          <h4 className="text-base font-bold text-rose-400 mt-1">{formatCurrency(m.totalRevenueAtRisk || 284500)}</h4>
+          <h4 className="text-base font-bold text-rose-400 mt-1">{formatCurrency(m.totalRevenueAtRisk ?? m.revenueAtRisk ?? 0)}</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Total Recovered</span>
-          <h4 className="text-base font-bold text-emerald-400 mt-1">{formatCurrency(m.totalRevenueRecovered || 142300)}</h4>
+          <h4 className="text-base font-bold text-emerald-400 mt-1">{formatCurrency(m.totalRevenueRecovered ?? m.recoveredRevenue ?? 0)}</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Recovery Rate</span>
-          <h4 className="text-base font-bold text-indigo-400 mt-1">{Number(m.recoveryRate || 50.0).toFixed(1)}%</h4>
+          <h4 className="text-base font-bold text-indigo-400 mt-1">{Number(m.recoveryRate || 0).toFixed(1)}%</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Recovered Today</span>
-          <h4 className="text-base font-bold text-purple-400 mt-1">{formatCurrency(m.recoveredToday || 20532)}</h4>
+          <h4 className="text-base font-bold text-purple-400 mt-1">{formatCurrency(m.recoveredToday || 0)}</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Avg Recovery Time</span>
-          <h4 className="text-base font-bold text-white mt-1">{m.averageRecoveryTime || "4.2 hrs"}</h4>
+          <h4 className="text-base font-bold text-white mt-1">{m.averageRecoveryTime || "0.0 hrs"}</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Successful Attempts</span>
-          <h4 className="text-base font-bold text-emerald-400 mt-1">{m.successfulAttempts || 24}</h4>
+          <h4 className="text-base font-bold text-emerald-400 mt-1">{m.successfulAttempts || 0}</h4>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 glass-panel">
           <span className="text-[11px] text-slate-400 font-medium">Failed Attempts</span>
-          <h4 className="text-base font-bold text-rose-400 mt-1">{m.failedAttempts || 6}</h4>
+          <h4 className="text-base font-bold text-rose-400 mt-1">{m.failedAttempts || 0}</h4>
         </div>
       </div>
 
       {/* Analytics Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RecoveryRateChart />
+        <RecoveryRateChart data={m.recoveryRateTrend || m.chartData} currentRate={m.recoveryRate} />
         <StrategyDistributionChart data={m.recoveryByStrategy} />
       </div>
 
@@ -103,30 +103,31 @@ export default function MetricsPage({ metrics, loading, error, onRetry }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono">
-                <tr>
-                  <td className="py-3 px-3 font-semibold text-indigo-400">PAYMENT_RETRY</td>
-                  <td className="py-3 px-3 text-center text-slate-200">8</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">₹68,500</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">75%</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-3 font-semibold text-cyan-400">PAYMENT_LINK</td>
-                  <td className="py-3 px-3 text-center text-slate-200">6</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">₹48,200</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">83%</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-3 font-semibold text-emerald-400">SEND_REMINDER</td>
-                  <td className="py-3 px-3 text-center text-slate-200">3</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">₹21,600</td>
-                  <td className="py-3 px-3 font-bold text-emerald-400">100%</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-3 font-semibold text-slate-400">STOP</td>
-                  <td className="py-3 px-3 text-center text-slate-200">1</td>
-                  <td className="py-3 px-3 font-bold text-slate-400">₹0</td>
-                  <td className="py-3 px-3 font-bold text-rose-400">0%</td>
-                </tr>
+                {(m.recoveryByStrategy && m.recoveryByStrategy.length > 0) ? (
+                  m.recoveryByStrategy.map((strat) => {
+                    let colorClass = "text-indigo-400";
+                    if (strat.strategy === "PAYMENT_LINK") colorClass = "text-cyan-400";
+                    else if (strat.strategy === "SEND_REMINDER") colorClass = "text-emerald-400";
+                    else if (strat.strategy === "STOP") colorClass = "text-slate-400";
+
+                    return (
+                      <tr key={strat.strategy}>
+                        <td className={`py-3 px-3 font-semibold ${colorClass}`}>{strat.strategy}</td>
+                        <td className="py-3 px-3 text-center text-slate-200">{strat.count || 0}</td>
+                        <td className="py-3 px-3 font-bold text-emerald-400">{formatCurrency(strat.amount || 0)}</td>
+                        <td className={`py-3 px-3 font-bold ${strat.successRate > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {strat.successRate || 0}%
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-slate-500 font-sans">
+                      No strategy performance data available
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

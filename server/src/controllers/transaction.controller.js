@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
 const Transaction = require("../models/Transaction");
+const { findTransactionByIdentifier } = require("../utils/transactionLookup");
 const { calculateRisk } = require("../services/riskEngine");
 
 const getTransactions = async (req, res) => {
@@ -37,17 +37,13 @@ const getTransactionById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Search by transactionId or MongoDB _id
-    let transaction = await Transaction.findOne({ transactionId: id });
-
-    if (!transaction && mongoose.Types.ObjectId.isValid(id)) {
-      transaction = await Transaction.findById(id);
-    }
+    const transaction = await findTransactionByIdentifier(id);
 
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: `Transaction with ID '${id}' not found`,
+        message: "Transaction not found",
+        receivedIdentifier: id,
       });
     }
 

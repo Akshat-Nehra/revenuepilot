@@ -1,5 +1,5 @@
 // RevenuePilot Centralized API Service Layer
-// Connects to Node.js + Express backend with JWT auth, normalizers, and fallback
+// Real backend is the default. Local mock mode is explicit via VITE_DEMO_MODE=true.
 
 import {
   INITIAL_TRANSACTIONS,
@@ -20,8 +20,10 @@ import {
 } from '../utils/normalize.js';
 
 // Base URL with clean trailing slash stripping
-const rawUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
+const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
+const rawUrl = env.VITE_API_BASE_URL || 'http://localhost:5000';
 export const API_BASE_URL = rawUrl.replace(/\/+$/, '');
+export const DEMO_MODE = String(env.VITE_DEMO_MODE || 'false').toLowerCase() === 'true';
 
 // JWT Token Storage in Memory & LocalStorage
 let authToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('rp_auth_token') || null) : null;
@@ -99,7 +101,7 @@ let demoState = {
   auditLogs: INITIAL_AUDIT_LOGS.map(normalizeAuditLog),
   chartData: [...MOCK_CHART_DATA],
   users: [...demoUsers],
-  isDemoMode: false
+  isDemoMode: DEMO_MODE
 };
 
 /**
@@ -158,20 +160,17 @@ export async function apiRequest(endpoint, options = {}) {
 }
 
 /**
- * Safe fetch wrapper that attempts real backend endpoint first,
- * then falls back to local mock store when backend is unavailable.
+ * Real backend wrapper. Local mock data is used only when VITE_DEMO_MODE=true.
  */
 async function fetchWithFallback(endpoint, options = {}, mockFallbackFn) {
-  try {
-    const rawData = await apiRequest(endpoint, options);
-    demoState.isDemoMode = false;
-    return { data: rawData, isDemoMode: false, source: 'backend' };
-  } catch (error) {
-    // If backend request fails (401, 404, connection refused, etc.), gracefully fall back to local dataset
+  if (DEMO_MODE) {
     demoState.isDemoMode = true;
-    const fallbackData = await mockFallbackFn();
-    return { data: fallbackData, isDemoMode: true, source: 'mock', error: error.message };
+    return { data: await mockFallbackFn(), isDemoMode: true, source: 'mock' };
   }
+
+  const rawData = await apiRequest(endpoint, options);
+  demoState.isDemoMode = false;
+  return { data: rawData, isDemoMode: false, source: 'backend' };
 }
 
 /**
@@ -188,8 +187,8 @@ export async function getHealth() {
     demoState.isDemoMode = false;
     return { connected: true, data: health, isDemoMode: false };
   } catch (error) {
-    demoState.isDemoMode = true;
-    return { connected: false, error: error.message, isDemoMode: true };
+    demoState.isDemoMode = DEMO_MODE;
+    return { connected: false, error: error.message, isDemoMode: DEMO_MODE };
   }
 }
 
@@ -212,11 +211,13 @@ export async function login(email, password) {
     demoState.isDemoMode = false;
     return { success: true, user: res.user, token: res.token, isDemoMode: false };
   } catch (error) {
-    // If backend returns 404 (e.g. backend not restarted), or connection failed/timed out:
-    // Allow seamless demo login for demo credentials
+    if (!DEMO_MODE) {
+      throw new Error(error.message || 'Unable to sign in. Please verify the backend is running.');
+    }
+
     const demoUser = demoState.users.find(u => u.email.toLowerCase() === cleanEmail);
 
-    if (demoUser && (password === 'Admin@123456' || password === 'Employee@123456' || password === 'password' || password.length >= 6)) {
+    if (demoUser && password && password.length >= 6) {
       const mockToken = `mock_jwt_${demoUser.role}_${Date.now()}`;
       setAuthToken(mockToken);
       demoState.isDemoMode = true;
@@ -228,31 +229,12 @@ export async function login(email, password) {
       };
     }
 
-    // If explicit 401 from backend, throw invalid credentials message
+    // Explicit authentication failures should remain authentication failures.
     if (error.status === 401) {
-      throw new Error(error.message || "Invalid email or password.");
+      throw new Error(error.message || 'Invalid email or password.');
     }
 
-    // Friendly message instead of raw HTTP 404
-    if (error.status === 404 || error.message?.includes('404')) {
-      // If user provided demo email with any password, allow demo fallback
-      if (cleanEmail === 'admin@revenuepilot.ai' || cleanEmail === 'employee@revenuepilot.ai') {
-        const role = cleanEmail.includes('admin') ? 'ADMIN' : 'EMPLOYEE';
-        const user = demoState.users.find(u => u.role === role) || demoState.users[0];
-        const mockToken = `mock_jwt_${role}_${Date.now()}`;
-        setAuthToken(mockToken);
-        demoState.isDemoMode = true;
-        return {
-          success: true,
-          user: { ...user, id: user._id || user.id },
-          token: mockToken,
-          isDemoMode: true
-        };
-      }
-      throw new Error("Invalid email or password. Use demo credentials to sign in.");
-    }
-
-    throw new Error(error.message || "Unable to sign in. Please verify your credentials.");
+    throw new Error(error.message || 'Unable to sign in. Please verify the backend is running.');
   }
 }
 
@@ -262,8 +244,8 @@ export async function getMe() {
     throw new Error("No authentication token available");
   }
 
-  // If token is mock demo token, return mock user directly
-  if (token.startsWith('mock_jwt_')) {
+  // Mock tokens are valid only in explicit demo mode
+  if (DEMO_MODE && token.startsWith('mock_jwt_')) {
     const role = token.includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE';
     const user = demoState.users.find(u => u.role === role) || demoState.users[0];
     return { success: true, user: { ...user, id: user._id || user.id }, isDemoMode: true };
@@ -278,10 +260,7 @@ export async function getMe() {
       setAuthToken(null);
       throw error;
     }
-    // If 404 or backend unavailable, fall back to demo user
-    const role = token.includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE';
-    const user = demoState.users.find(u => u.role === role) || demoState.users[0];
-    return { success: true, user: { ...user, id: user._id || user.id }, isDemoMode: true };
+    throw new Error(error.message || 'Unable to retrieve authenticated user.');
   }
 }
 
@@ -412,11 +391,13 @@ export async function getTransactionById(id) {
     // Continue to next strategy
   }
 
-  // 3. Fallback: Search local demo state
-  const foundDemo = demoState.transactions.find(t => t.id === id || t.transactionId === id || t._id === id);
-  if (foundDemo) {
-    demoState.isDemoMode = true;
-    return { data: normalizeTransaction(foundDemo), isDemoMode: true, source: 'mock' };
+  // 3. Local demo data is opt-in only
+  if (DEMO_MODE) {
+    const foundDemo = demoState.transactions.find(t => t.id === id || t.transactionId === id || t._id === id);
+    if (foundDemo) {
+      demoState.isDemoMode = true;
+      return { data: normalizeTransaction(foundDemo), isDemoMode: true, source: 'mock' };
+    }
   }
 
   // 4. Fallback: Check evaluate endpoint
@@ -450,13 +431,14 @@ export async function evaluateAIRecovery(transactionId) {
     const res = await apiRequest(ENDPOINTS.recoveryAI(transactionId), { timeout: 6000 });
     return { data: res, isDemoMode: false };
   } catch (err) {
+    if (!DEMO_MODE) throw err;
     const found = demoState.transactions.find(t => t.id === transactionId);
     return {
       data: {
         success: true,
         transactionId,
         risk: { score: found?.riskScore || 87, level: found?.riskLevel || 'HIGH' },
-        eligibility: { decision: "ELIGIBLE" },
+        eligibility: { decision: 'ELIGIBLE' },
         aiRecommendation: found?.aiRecommendation
       },
       isDemoMode: true
@@ -466,108 +448,127 @@ export async function evaluateAIRecovery(transactionId) {
 export const analyzeRecovery = evaluateAIRecovery;
 
 /**
- * 6. Execute Recovery Action (POST /api/recovery/execute/:transactionId)
+ * Validates whether a URL is a genuine Razorpay URL
  */
-export async function executeRecovery(transactionId) {
+export const isValidRazorpayUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
   try {
-    const res = await apiRequest(ENDPOINTS.executeRecovery(transactionId), { method: 'POST' });
-    demoState.isDemoMode = false;
-    
-    const execution = res.execution || res.data?.execution || res;
-    const paymentLinkUrl = res.data?.paymentLink || res.paymentLink || res.paymentLinkUrl || res.short_url || res.razorpayUrl || execution.paymentLinkUrl || execution.short_url || execution.paymentLink || execution.razorpayUrl;
-    const paymentLinkId = res.data?.paymentLinkId || res.paymentLinkId || execution.paymentLinkId || execution.razorpayPaymentLinkId || '';
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "rzp.io" || parsed.hostname.endsWith(".razorpay.com"))
+    );
+  } catch {
+    return false;
+  }
+};
 
-    if (!paymentLinkUrl) {
-      throw new Error(res.message || "Backend did not return a valid Razorpay payment link");
-    }
+/**
+ * 6. Execute Recovery Action (POST /api/recovery/execute/:transactionId)
+ * Accepts either a transaction object or string identifier.
+ * NO mock fallback is allowed for recovery execution.
+ */
+export async function executeRecovery(input) {
+  let identifier = null;
 
+  if (typeof input === "string") {
+    identifier = input.trim();
+  } else if (input && typeof input === "object") {
+    identifier = input.transactionId || input.id || input._id;
+  }
+
+  if (
+    !identifier ||
+    typeof identifier !== "string" ||
+    identifier.trim() === "" ||
+    identifier === "undefined" ||
+    identifier === "null" ||
+    identifier === "[object Object]"
+  ) {
+    throw new Error("Invalid transaction identifier provided for recovery execution.");
+  }
+
+  const cleanId = identifier.trim();
+  const endpoint = `${ENDPOINTS.executeRecovery(encodeURIComponent(cleanId))}`;
+
+  // Direct call to backend — DO NOT use mock fallback for recovery execution
+  const res = await apiRequest(endpoint, {
+    method: "POST",
+        headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.success) {
+    throw new Error(res.message || res.reason || "Recovery execution failed.");
+  }
+
+  // Handle SEND_REMINDER
+  if (res.action === "SEND_REMINDER") {
     return {
-      data: {
-        success: true,
-        message: "Recovery action executed successfully. Razorpay Payment Link active.",
-        transactionId,
-        recoveryAttemptId: res.data?.recoveryAttemptId || execution.recoveryAttemptId || res.attemptId,
-        attemptNumber: res.data?.attemptNumber || execution.attemptNumber || 1,
-        status: res.data?.status || execution.status || "payment_pending",
-        paymentLinkId: paymentLinkId,
-        razorpayPaymentLinkId: paymentLinkId,
-        paymentLink: paymentLinkUrl,
-        paymentLinkUrl: paymentLinkUrl,
-        short_url: paymentLinkUrl,
-        razorpayUrl: paymentLinkUrl,
-        execution: execution,
-        recommendation: res.recommendation
-      },
-      isDemoMode: false
-    };
-  } catch (error) {
-    demoState.isDemoMode = true;
-
-    const txnIndex = demoState.transactions.findIndex(t => t.id === transactionId || t.transactionId === transactionId);
-    if (txnIndex === -1) {
-      throw new Error(`Transaction ${transactionId} not found`);
-    }
-
-    const txn = demoState.transactions[txnIndex];
-    const attemptNum = (txn.attemptsCount || 1) + 1;
-    const attemptId = `ATT_${Math.floor(9000 + Math.random() * 999)}`;
-    const linkId = `pl_${Math.random().toString(36).substring(2, 10)}`;
-    const razorpayUrl = `https://razorpay.com/pay/${linkId}`;
-
-    const newAttempt = normalizeRecoveryAttempt({
-      id: attemptId,
-      transactionId: txn.id,
-      attemptNumber: attemptNum,
-      action: txn.aiRecommendation?.action || "PAYMENT_LINK",
-      strategy: txn.aiRecommendation?.strategy || "PAYMENT_LINK",
-      amount: txn.amount,
-      status: "payment_pending",
-      createdAt: new Date().toISOString(),
-      recoveredAt: null,
-      recoveredAmount: 0,
-      razorpayLinkId: linkId,
-      razorpayUrl: razorpayUrl
-    });
-
-    const updatedTxn = normalizeTransaction({
-      ...txn,
-      attemptsCount: attemptNum,
-      status: "Pending",
-      lastAttemptAt: new Date().toISOString(),
-      razorpayLinkId: linkId,
-      razorpayUrl: razorpayUrl
-    });
-
-    demoState.transactions[txnIndex] = updatedTxn;
-    demoState.recoveryAttempts.unshift(newAttempt);
-
-    const auditEntry = normalizeAuditLog({
-      id: `AUD_${Math.floor(800 + Math.random() * 100)}`,
-      timestamp: new Date().toISOString(),
-      transactionId: txn.id,
-      event: "PAYMENT_LINK_CREATED",
-      actor: "RevenuePilot Engine",
-      decision: txn.aiRecommendation?.action || "PAYMENT_LINK",
-      status: "SUCCESS",
-      details: `Generated Razorpay Payment Link ${linkId} for ₹${txn.amount.toLocaleString('en-IN')}`
-    });
-    demoState.auditLogs.unshift(auditEntry);
-
-    return {
-      data: {
-        success: true,
-        message: "Recovery action executed successfully.",
-        transaction: updatedTxn,
-        attempt: newAttempt,
-        recoveryAttemptId: attemptId,
-        attemptNumber: attemptNum,
-        status: "payment_pending",
-        razorpayPaymentLinkId: linkId,
-        razorpayUrl: razorpayUrl
-      },
-      isDemoMode: true
+      success: true,
+      message: res.message || "Recovery reminder dispatched successfully",
+      transactionId: res.transactionId || cleanId,
+      recoveryAttemptId: res.recoveryAttemptId || res.data?.recoveryAttemptId,
+      action: "SEND_REMINDER",
+      status: res.status || "reminder_sent",
+      strategy: res.strategy || "SEND_REMINDER",
+      details: res.details || "Reminder action recorded by RevenuePilot. Connect an SMS/email provider for external delivery.",
+      data: res,
     };
   }
+
+  // Handle PAYMENT_LINK
+  const paymentLinkObj = res.paymentLink || res.data?.paymentLink || {};
+  const rawUrl =
+    (typeof paymentLinkObj === "object" ? paymentLinkObj.short_url : null) ||
+    res.short_url ||
+    res.paymentLinkUrl ||
+    res.data?.short_url ||
+    res.data?.paymentLinkUrl ||
+    (typeof res.paymentLink === "string" ? res.paymentLink : null) ||
+    (typeof res.data?.paymentLink === "string" ? res.data.paymentLink : null);
+
+  const shortUrl = isValidRazorpayUrl(rawUrl) ? rawUrl : null;
+  const paymentLinkId =
+    paymentLinkObj.id ||
+    res.paymentLinkId ||
+    res.data?.paymentLinkId ||
+    "";
+
+  if (!shortUrl || !paymentLinkId) {
+    throw new Error(
+      res.message ||
+      "Recovery did not produce a valid Razorpay Payment Link. Check the backend Razorpay error."
+    );
+  }
+
+  return {
+    success: true,
+    message: res.message || "Recovery executed successfully",
+    transactionId: res.transactionId || cleanId,
+    recoveryAttemptId: res.recoveryAttemptId || res.data?.recoveryAttemptId,
+    action: "PAYMENT_LINK",
+    paymentLink: {
+      id: paymentLinkId,
+      short_url: shortUrl,
+      amount: paymentLinkObj.amount || res.amount,
+      currency: paymentLinkObj.currency || "INR",
+      status: paymentLinkObj.status || res.status || "payment_pending",
+    },
+    // Top-level aliases for direct component consumption
+    paymentLinkId,
+    paymentLinkUrl: shortUrl,
+    short_url: shortUrl,
+    status: res.status || "payment_pending",
+    data: {
+      ...res,
+      paymentLink: shortUrl,
+      paymentLinkUrl: shortUrl,
+      short_url: shortUrl,
+      paymentLinkId,
+    },
+  };
 }
 
 /**
@@ -582,7 +583,7 @@ export async function getRecoveryAttempts() {
     ? result.data
     : (result.data?.recoveryAttempts || result.data?.attempts || result.data?.data || []);
 
-  const listToNormalize = rawList.length > 0 ? rawList : demoState.recoveryAttempts;
+  const listToNormalize = DEMO_MODE && rawList.length === 0 ? demoState.recoveryAttempts : rawList;
   return { ...result, data: listToNormalize.map(normalizeRecoveryAttempt) };
 }
 
@@ -615,6 +616,15 @@ export async function getMetrics(transactionsList = [], recoveryList = []) {
     return {
       ...normalizeMetrics({}, demoState.transactions, demoState.recoveryAttempts),
       chartData: demoState.chartData,
+      recoveryRateTrend: [
+        { date: "Aug 29", rate: 45.0 },
+        { date: "Aug 30", rate: 46.2 },
+        { date: "Aug 31", rate: 47.8 },
+        { date: "Sep 01", rate: 48.5 },
+        { date: "Sep 02", rate: 49.0 },
+        { date: "Sep 03", rate: 49.5 },
+        { date: "Today", rate: 50.0 },
+      ],
       recoveryByStrategy: RECOVERY_BY_STRATEGY,
       recoveryByFailureReason: RECOVERY_BY_FAILURE_REASON
     };
@@ -622,15 +632,17 @@ export async function getMetrics(transactionsList = [], recoveryList = []) {
 
   const raw = result.data?.metrics || result.data;
   const normalized = normalizeMetrics(raw, transactionsList, recoveryList);
-  
-  if (!normalized.chartData || normalized.chartData.length === 0) {
-    normalized.chartData = demoState.chartData;
-  }
-  if (!normalized.recoveryByStrategy || normalized.recoveryByStrategy.length === 0) {
-    normalized.recoveryByStrategy = RECOVERY_BY_STRATEGY;
-  }
-  if (!normalized.recoveryByFailureReason || normalized.recoveryByFailureReason.length === 0) {
-    normalized.recoveryByFailureReason = RECOVERY_BY_FAILURE_REASON;
+
+  if (DEMO_MODE) {
+    if (!normalized.chartData || normalized.chartData.length === 0) {
+      normalized.chartData = demoState.chartData;
+    }
+    if (!normalized.recoveryByStrategy || normalized.recoveryByStrategy.length === 0) {
+      normalized.recoveryByStrategy = RECOVERY_BY_STRATEGY;
+    }
+    if (!normalized.recoveryByFailureReason || normalized.recoveryByFailureReason.length === 0) {
+      normalized.recoveryByFailureReason = RECOVERY_BY_FAILURE_REASON;
+    }
   }
 
   return { ...result, data: normalized };
@@ -648,7 +660,7 @@ export async function getAIDecisions() {
     ? result.data 
     : (result.data?.decisions || result.data?.aiDecisions || result.data?.data || []);
 
-  const listToNormalize = rawList.length > 0 ? rawList : demoState.aiDecisions;
+  const listToNormalize = DEMO_MODE && rawList.length === 0 ? demoState.aiDecisions : rawList;
   return { ...result, data: listToNormalize.map(normalizeAIDecision) };
 }
 
@@ -664,7 +676,7 @@ export async function getAuditLogs() {
     ? result.data 
     : (result.data?.logs || result.data?.auditLogs || result.data?.data || []);
 
-  const listToNormalize = rawList.length > 0 ? rawList : demoState.auditLogs;
+  const listToNormalize = DEMO_MODE && rawList.length === 0 ? demoState.auditLogs : rawList;
   return { ...result, data: listToNormalize.map(normalizeAuditLog) };
 }
 

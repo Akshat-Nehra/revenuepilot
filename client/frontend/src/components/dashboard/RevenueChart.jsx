@@ -13,20 +13,27 @@ import {
 export default function RevenueChart({ data }) {
   const [timeRange, setTimeRange] = useState('7d');
 
-  const formattedData = data || [
-    { day: "Aug 28", atRisk: 42000, recovered: 18000 },
-    { day: "Aug 29", atRisk: 58000, recovered: 29000 },
-    { day: "Aug 30", atRisk: 35000, recovered: 21000 },
-    { day: "Aug 31", atRisk: 64000, recovered: 34000 },
-    { day: "Sep 01", atRisk: 49000, recovered: 28000 },
-    { day: "Sep 02", atRisk: 72000, recovered: 39000 },
-    { day: "Sep 03", atRisk: 84500, recovered: 42300 },
+  const formattedData = (data && data.length > 0) ? data : [
+    { day: "Aug 28", atRisk: 0, recovered: 0 },
+    { day: "Aug 29", atRisk: 0, recovered: 0 },
+    { day: "Aug 30", atRisk: 0, recovered: 0 },
+    { day: "Aug 31", atRisk: 0, recovered: 0 },
+    { day: "Sep 01", atRisk: 0, recovered: 0 },
+    { day: "Sep 02", atRisk: 0, recovered: 0 },
+    { day: "Today", atRisk: 0, recovered: 0 },
   ];
 
-  const formatCurrency = (val) => `₹${(val / 1000).toFixed(0)}k`;
+  const formatCurrency = (val) => {
+    if (!val || val === 0) return '₹0';
+    if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
+    if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
+    if (val >= 1000) return `₹${(val / 1000).toFixed(0)}k`;
+    return `₹${val}`;
+  };
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 glass-panel">
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h3 className="text-base font-bold text-white">Revenue At Risk vs Recovered</h3>

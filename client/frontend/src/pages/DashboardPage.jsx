@@ -73,9 +73,8 @@ export default function DashboardPage({
         {/* 1. Revenue At Risk */}
         <StatCard
           title="Revenue At Risk"
-          value={formatCurrency(m.revenueAtRisk || 284500)}
-          change={m.revenueAtRiskTrend || "+4.2%"}
-          trend="up"
+          value={formatCurrency(m.revenueAtRisk ?? m.totalRevenueAtRisk ?? 0)}
+          subtitle="Failed, abandoned & overdue"
           icon={AlertTriangle}
           accentColor="rose"
         />
@@ -83,9 +82,8 @@ export default function DashboardPage({
         {/* 2. Recovered Revenue */}
         <StatCard
           title="Recovered Revenue"
-          value={formatCurrency(m.recoveredRevenue || 142300)}
-          change={m.recoveredRevenueTrend || "+12.8%"}
-          trend="up"
+          value={formatCurrency(m.recoveredRevenue ?? m.totalRevenueRecovered ?? 0)}
+          subtitle={`${m.successfulAttempts || 0} payments recaptured`}
           icon={TrendingUp}
           accentColor="emerald"
         />
@@ -93,9 +91,8 @@ export default function DashboardPage({
         {/* 3. Recovery Rate */}
         <StatCard
           title="Recovery Rate"
-          value={`${Number(m.recoveryRate || 50.0).toFixed(1)}%`}
-          change={m.recoveryRateTrend || "+2.5%"}
-          trend="up"
+          value={`${Number(m.recoveryRate || 0).toFixed(1)}%`}
+          subtitle="Conversion rate"
           icon={Percent}
           accentColor="blue"
         />
@@ -103,8 +100,8 @@ export default function DashboardPage({
         {/* 4. Recovered Today (Task 5) */}
         <StatCard
           title="Recovered Today"
-          value={formatCurrency(m.recoveredToday || 20532)}
-          subtitle="Recovered from 1 successful payment today"
+          value={formatCurrency(m.recoveredToday || 0)}
+          subtitle={m.recoveredToday > 0 ? "Recovered today" : "No recoveries today"}
           icon={CheckCircle2}
           accentColor="purple"
         />
@@ -112,7 +109,7 @@ export default function DashboardPage({
         {/* 5. Active Recovery Attempts */}
         <StatCard
           title="Active Attempts"
-          value={m.activeAttempts || 18}
+          value={m.activeAttempts || 0}
           subtitle="Pending customer checkout"
           icon={RotateCcw}
           accentColor="amber"
@@ -128,7 +125,11 @@ export default function DashboardPage({
           <RevenueChart data={m.chartData} />
         </div>
         <div className="lg:col-span-1">
-          <RecoveryFunnel />
+          <RecoveryFunnel 
+            metrics={m} 
+            transactions={transactions} 
+            recoveryAttempts={recoveryAttempts} 
+          />
         </div>
       </div>
 

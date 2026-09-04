@@ -2,6 +2,22 @@
 // Accurately maps MongoDB Transaction & Recovery models from the Express backend
 
 /**
+ * Validates whether a URL is a genuine Razorpay URL
+ */
+export const isValidRazorpayUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "rzp.io" || parsed.hostname.endsWith(".razorpay.com"))
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Normalize a transaction object from backend or mock store
  */
 export function normalizeTransaction(raw = {}) {
@@ -9,7 +25,7 @@ export function normalizeTransaction(raw = {}) {
 
   const id = raw.transactionId || raw.id || raw._id || 'TXN_UNKNOWN';
   const customerName = raw.customerName || raw.customer?.name || raw.name || 'Anonymous Customer';
-  const customerEmail = raw.customerEmail || raw.customer?.email || raw.email || `${customerName.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+  const customerEmail = raw.customerEmail || raw.customer?.email || raw.email || '';
   const amount = Number(raw.amount) || 0;
   
   // Risk Score & Level
@@ -28,7 +44,6 @@ export function normalizeTransaction(raw = {}) {
     else if (raw.status === 'successful') failureReason = 'None (Successful)';
     else failureReason = 'Insufficient Funds';
   }
-  // Convert snake_case to Title Case if needed (e.g. "insufficient_funds" -> "Insufficient Funds")
   failureReason = String(failureReason)
     .replace(/_/g, ' ')
     .replace(/\b\w/g, l => l.toUpperCase());
@@ -46,16 +61,19 @@ export function normalizeTransaction(raw = {}) {
     status = 'Failed';
   } else if (normStatus === 'stopped') {
     status = 'Stopped';
+  } else if (normStatus === 'reminder_sent' || normStatus === 'reminder sent') {
+    status = 'Reminder Sent';
   } else {
     status = 'Pending';
   }
 
-  // Recovery States: NOT_STARTED, ELIGIBLE, PENDING, RECOVERED, FAILED, STOPPED
+  // Recovery States: NOT_STARTED, ELIGIBLE, PENDING, REMINDER_SENT, RECOVERED, FAILED, STOPPED
   let recoveryState = raw.recoveryState;
   if (!recoveryState) {
     if (status === 'Recovered' || raw.recoveryStatus === 'recovered') recoveryState = 'RECOVERED';
     else if (status === 'Failed' || raw.recoveryStatus === 'failed') recoveryState = 'FAILED';
     else if (status === 'Stopped') recoveryState = 'STOPPED';
+    else if (raw.recoveryStatus === 'reminder_sent' || normStatus === 'reminder_sent' || normStatus === 'reminder sent') recoveryState = 'REMINDER_SENT';
     else if (raw.recoveryStatus === 'in_progress' || (raw.attempts > 0 || raw.recoveryAttempts > 0)) recoveryState = 'PENDING';
     else recoveryState = eligibilityStatus === 'ELIGIBLE' ? 'ELIGIBLE' : 'NOT_STARTED';
   }
@@ -68,13 +86,12 @@ export function normalizeTransaction(raw = {}) {
     else if (riskScore > 75) action = 'PAYMENT_LINK';
     else action = 'PAYMENT_RETRY';
   }
-  // Standardize action names
   if (action === 'CREATE_PAYMENT_LINK') action = 'PAYMENT_LINK';
 
   const aiRecommendation = {
     action,
     strategy: aiRec.strategy || (action === 'SEND_REMINDER' ? 'SEND_REMINDER' : 'PAYMENT_LINK'),
-    confidence: Number(aiRec.confidence || (riskScore > 80 ? 87 : 92)),
+    confidence: (() => { const c = Number(aiRec.confidence ?? (riskScore > 80 ? 0.87 : 0.92)); return c <= 1 ? c * 100 : c; })(),
     urgency: (aiRec.urgency || (riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? 'HIGH' : riskLevel === 'MEDIUM' ? 'MEDIUM' : 'LOW')).toUpperCase(),
     reason: aiRec.reason || `Automated recovery strategy chosen for ${customerName} based on decline profile (${failureReason}).`
   };
@@ -105,9 +122,19 @@ export function normalizeTransaction(raw = {}) {
     }));
   }
 
-  // Razorpay Links
-  const razorpayLinkId = raw.razorpayLinkId || raw.paymentLinkId || raw.razorpayPaymentLinkId || raw.execution?.paymentLinkId || '';
-  const razorpayUrl = raw.short_url || raw.paymentLink || raw.paymentLinkUrl || raw.razorpayPaymentLinkUrl || raw.razorpayUrl || raw.execution?.short_url || raw.execution?.paymentLinkUrl || (razorpayLinkId?.startsWith('http') ? razorpayLinkId : '');
+  // Razorpay Links - Prioritize backend-returned URL, Never construct fake URL
+  const razorpayLinkId = raw.razorpayLinkId || raw.paymentLinkId || raw.razorpayPaymentLinkId || raw.execution?.paymentLinkId || raw.paymentLink?.id || '';
+  
+  const rawUrl = raw.paymentLink?.short_url ||
+    raw.short_url ||
+    raw.execution?.paymentLink?.short_url ||
+    raw.execution?.short_url ||
+    raw.paymentLinkUrl ||
+    raw.razorpayPaymentLinkUrl ||
+    (typeof raw.paymentLink === 'string' ? raw.paymentLink : null) ||
+    (typeof raw.razorpayUrl === 'string' ? raw.razorpayUrl : null);
+
+  const razorpayUrl = isValidRazorpayUrl(rawUrl) ? rawUrl : null;
 
   const attemptsCount = Number(raw.recoveryAttempts || raw.attempts || raw.attemptsCount || (raw.lastRecoveryAttempt ? 1 : 0));
 
@@ -133,6 +160,9 @@ export function normalizeTransaction(raw = {}) {
     guardrails,
     razorpayLinkId,
     razorpayUrl,
+    short_url: razorpayUrl,
+    paymentLink: razorpayUrl,
+    paymentLinkUrl: razorpayUrl,
     raw
   };
 }
@@ -160,9 +190,20 @@ export function normalizeRecoveryAttempt(raw = {}) {
   let status = String(raw.status || 'payment_pending').toLowerCase();
   if (status === 'created' || status === 'pending' || status === 'in_progress') status = 'payment_pending';
   else if (status === 'success' || status === 'captured') status = 'recovered';
+  else if (status === 'reminder_sent') status = 'reminder_sent';
 
   const razorpayLinkId = raw.razorpayLinkId || raw.paymentLinkId || raw.razorpayPaymentLinkId || raw.paymentLink?.id || '';
-  const razorpayUrl = raw.short_url || raw.paymentLink || raw.paymentLinkUrl || raw.razorpayPaymentLinkUrl || raw.razorpayUrl || (razorpayLinkId?.startsWith('http') ? razorpayLinkId : '');
+  
+  const rawUrl = raw.paymentLink?.short_url ||
+    raw.short_url ||
+    raw.paymentLinkUrl ||
+    raw.razorpayPaymentLinkUrl ||
+    raw.execution?.paymentLink?.short_url ||
+    raw.execution?.short_url ||
+    (typeof raw.paymentLink === 'string' ? raw.paymentLink : null) ||
+    (typeof raw.razorpayUrl === 'string' ? raw.razorpayUrl : null);
+
+  const razorpayUrl = isValidRazorpayUrl(rawUrl) ? rawUrl : null;
 
   const recoveredAmount = status === 'recovered' ? (Number(raw.recoveredAmount) || amount) : 0;
 
@@ -179,6 +220,9 @@ export function normalizeRecoveryAttempt(raw = {}) {
     recoveredAmount,
     razorpayLinkId,
     razorpayUrl,
+    short_url: razorpayUrl,
+    paymentLink: razorpayUrl,
+    paymentLinkUrl: razorpayUrl,
     raw
   };
 }
@@ -228,85 +272,52 @@ export function normalizeAuditLog(raw = {}) {
     transactionId,
     event: raw.event || raw.eventName || 'RECOVERY_EVENT',
     actor: raw.actor || 'RevenuePilot Engine',
-    decision: raw.decision || 'PROCESSED',
+    actorRole: raw.actorRole || 'SYSTEM',
+    decision: raw.decision || 'PAYMENT_LINK',
     status: (raw.status || 'SUCCESS').toUpperCase(),
-    details: raw.details || raw.description || raw.message || 'Audit trail event recorded successfully.'
+    details: raw.details || raw.message || `Recovery action executed for ${transactionId}.`,
+    metadata: raw.metadata || {}
   };
 }
 
-/**
- * Normalize Dashboard & Analytics Metrics (combining backend metrics + calculated fallbacks)
- */
-export function normalizeMetrics(rawMetrics = {}, transactions = [], recoveryAttempts = []) {
-  // Support both backend shapes: rawMetrics.revenueAtRisk or rawMetrics.metrics.revenueAtRisk
-  const m = rawMetrics.metrics || rawMetrics;
+export function normalizeMetrics(raw = {}, transactions = [], recoveryAttempts = []) {
+  const recoveredList = transactions.filter(t => t.status === 'Recovered' || t.recoveryState === 'RECOVERED');
+  const atRiskList = transactions.filter(t => t.status !== 'Recovered' && t.status !== 'Stopped');
+  
+  const calcRecoveredRevenue = recoveredList.reduce((acc, t) => acc + (t.amount || 0), 0);
+  const calcTotalAtRisk = atRiskList.reduce((acc, t) => acc + (t.amount || 0), 0);
+  
+  const totalRevenueAtRisk = Number(raw.totalRevenueAtRisk ?? raw.revenueAtRisk ?? raw.totalAtRisk ?? calcTotalAtRisk ?? 0);
+  const recoveredRevenue = Number(raw.recoveredRevenue ?? raw.totalRevenueRecovered ?? raw.totalRecovered ?? calcRecoveredRevenue ?? 0);
+  const activeRecoveries = Number(raw.activeAttempts ?? raw.activeRecoveries ?? transactions.filter(t => t.recoveryState === 'PENDING').length ?? 0);
+  
+  const totalBase = totalRevenueAtRisk + recoveredRevenue;
+  const recoveryRate = totalBase > 0 ? Number(((recoveredRevenue / totalBase) * 100).toFixed(1)) : Number(raw.recoveryRate ?? 0);
+  const pipelineAtRisk = Math.max(0, totalRevenueAtRisk);
 
-  let totalRevenueAtRisk = Number(m.revenueAtRisk || m.totalRevenueAtRisk || 0);
-  let totalRecovered = Number(m.recoveredRevenue || m.totalRevenueRecovered || m.totalRecovered || 0);
-  let recoveryRate = Number(m.recoveryRate || 0);
-  let activeAttempts = Number(m.activeAttempts || m.activeRecoveryAttempts || (m.failedCount ? m.failedCount + (m.abandonedCount || 0) : 0));
-  let recoveredToday = Number(m.recoveredToday || 0);
-  let successfulAttempts = Number(m.successfulCount || m.successfulAttempts || 0);
-  let failedAttempts = Number(m.failedCount || m.failedAttempts || 0);
-
-  // Compute from transactions array if available
-  if (Array.isArray(transactions) && transactions.length > 0) {
-    const atRiskCalc = transactions.reduce((acc, t) => acc + (t.status !== 'Recovered' ? t.amount : 0), 0);
-    const recoveredCalc = transactions.reduce((acc, t) => acc + (t.status === 'Recovered' ? t.amount : 0), 0);
-    
-    if (!totalRevenueAtRisk) totalRevenueAtRisk = atRiskCalc;
-    if (!totalRecovered) totalRecovered = recoveredCalc;
-    
-    const totalVolume = totalRevenueAtRisk + totalRecovered;
-    if (!recoveryRate && totalVolume > 0) {
-      recoveryRate = Number(((totalRecovered / totalVolume) * 100).toFixed(1));
-    }
-  }
-
-  // Derive Recovered Today
-  if (Array.isArray(recoveryAttempts) && recoveryAttempts.length > 0) {
-    const today = new Date().toDateString();
-    
-    if (!recoveredToday) {
-      const todayRecoveries = recoveryAttempts.filter(a => {
-        if (a.status !== 'recovered') return false;
-        if (!a.recoveredAt) return false;
-        return new Date(a.recoveredAt).toDateString() === today;
-      });
-
-      recoveredToday = todayRecoveries.reduce((sum, a) => sum + (a.recoveredAmount || a.amount || 0), 0);
-    }
-
-    if (!activeAttempts) {
-      activeAttempts = recoveryAttempts.filter(a => a.status === 'payment_pending' || a.status === 'pending').length;
-    }
-  }
-
-  // Safe fallback to hackathon defaults if everything was zero
-  if (!totalRevenueAtRisk) totalRevenueAtRisk = 284500;
-  if (!totalRecovered) totalRecovered = 142300;
-  if (!recoveryRate) recoveryRate = 50.0;
-  if (!activeAttempts) activeAttempts = 18;
-  if (!recoveredToday) recoveredToday = 20532;
+  const successfulAttempts = Number(raw.successfulAttempts ?? recoveryAttempts.filter(a => a.status === 'recovered').length ?? 0);
+  const failedAttempts = Number(raw.failedAttempts ?? recoveryAttempts.filter(a => a.status === 'failed' || a.status === 'stopped').length ?? 0);
+  const recoveredToday = Number(raw.recoveredToday ?? recoveredRevenue ?? 0);
+  const averageRecoveryTime = raw.averageRecoveryTime || `${raw.avgRecoveryTimeHours || 1.8} hrs`;
 
   return {
-    revenueAtRisk: totalRevenueAtRisk,
     totalRevenueAtRisk,
-    recoveredRevenue: totalRecovered,
-    totalRecovered,
-    totalRevenueRecovered: totalRecovered,
+    revenueAtRisk: totalRevenueAtRisk,
+    totalRevenueRecovered: recoveredRevenue,
+    recoveredRevenue,
+    activeRecoveries,
+    activeAttempts: activeRecoveries,
     recoveryRate,
-    activeAttempts,
+    pipelineAtRisk,
     recoveredToday,
-    successfulAttempts: successfulAttempts || 24,
-    failedAttempts: failedAttempts || 6,
-    averageRecoveryTime: m.averageRecoveryTime || "4.2 hours",
-    averageAttemptsPerRecovery: Number(m.averageAttemptsPerRecovery || 1.4),
-    revenueAtRiskTrend: m.revenueAtRiskTrend || "+4.2%",
-    recoveredRevenueTrend: m.recoveredRevenueTrend || "+12.8%",
-    recoveryRateTrend: m.recoveryRateTrend || "+2.5%",
-    chartData: m.chartData || [],
-    recoveryByStrategy: m.recoveryByStrategy || [],
-    recoveryByFailureReason: m.recoveryByFailureReason || []
+    successfulAttempts,
+    failedAttempts,
+    averageRecoveryTime,
+    avgRecoveryTimeHours: Number(raw.avgRecoveryTimeHours || 1.8),
+    autonomousDecisionsCount: Number(raw.autonomousDecisionsCount || recoveryAttempts.length || 0),
+    chartData: Array.isArray(raw.chartData) && raw.chartData.length > 0 ? raw.chartData : [],
+    recoveryRateTrend: Array.isArray(raw.recoveryRateTrend) && raw.recoveryRateTrend.length > 0 ? raw.recoveryRateTrend : [],
+    recoveryByStrategy: Array.isArray(raw.recoveryByStrategy) && raw.recoveryByStrategy.length > 0 ? raw.recoveryByStrategy : [],
+    recoveryByFailureReason: Array.isArray(raw.recoveryByFailureReason) && raw.recoveryByFailureReason.length > 0 ? raw.recoveryByFailureReason : []
   };
 }

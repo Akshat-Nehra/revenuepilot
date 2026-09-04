@@ -1,10 +1,12 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Eye, Play } from 'lucide-react';
 import RiskBadge from '../common/RiskBadge.jsx';
 import StatusBadge from '../common/StatusBadge.jsx';
 import { formatCurrency, formatDate } from '../../utils/formatters.js';
 
 export default function RecentActivityTable({ transactions = [], onSelectTransaction, onExecuteRecovery }) {
+  const navigate = useNavigate();
   const displayList = (transactions || []).slice(0, 6);
 
   return (
@@ -16,11 +18,12 @@ export default function RecentActivityTable({ transactions = [], onSelectTransac
         </div>
         <span 
           className="text-xs font-semibold text-indigo-400 hover:underline cursor-pointer" 
-          onClick={() => onSelectTransaction(null)}
+          onClick={() => navigate('/transactions')}
         >
           View All Transactions →
         </span>
       </div>
+
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">

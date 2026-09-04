@@ -7,9 +7,13 @@ const {
   getRecoveryAttempts,
   getRecoveryAttemptById,
   getAIDecisions,
+  syncRecoveryAttempts,
 } = require("../controllers/recovery.controller");
 
 const router = express.Router();
+
+// Synchronize recovery status with Razorpay
+router.post("/sync", syncRecoveryAttempts);
 
 // List all recovery attempts
 router.get("/", getRecoveryAttempts);

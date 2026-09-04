@@ -26,7 +26,8 @@ import {
   getMetrics,
   getSystemStatus,
   executeRecovery,
-  getHealth
+  getHealth,
+  isValidRazorpayUrl
 } from './services/api.js';
 
 import { formatCurrency } from './utils/formatters.js';
@@ -183,20 +184,30 @@ function MainAppShell() {
   }, []);
 
   // Action Handler: Execute Recovery
-  const handleConfirmExecution = async (transactionId) => {
+  const handleConfirmExecution = async (transactionInput) => {
     try {
-      const result = await executeRecovery(transactionId);
+      const result = await executeRecovery(transactionInput);
 
       // Refresh data store
       await loadData(false);
 
-      setToast({
-        message: "Recovery action executed successfully. Razorpay Payment Link dispatched.",
-        type: "success"
-      });
+      const shortUrl = result.paymentLink?.short_url || result.paymentLinkUrl || result.short_url;
+      const hasValidLink = isValidRazorpayUrl(shortUrl);
 
-      // Start 5-second polling to watch for payment completion webhook
-      startPolling();
+      if (result.success && hasValidLink) {
+        setToast({
+          message: "Recovery action executed successfully. Razorpay Payment Link dispatched.",
+          type: "success"
+        });
+
+        // Start 5-second polling only after a real recovery attempt has been created
+        startPolling();
+      } else if (result.success) {
+        setToast({
+          message: "Recovery executed, but Razorpay did not return a payment link.",
+          type: "warning"
+        });
+      }
 
       return result.data || result;
     } catch (err) {

@@ -104,7 +104,7 @@ export default function TransactionDetailModal({ isOpen, onClose, transaction, o
                 <span className="text-xs font-semibold text-slate-400">Urgency:</span>
                 <span className="text-xs font-bold text-amber-400 uppercase">{aiRec.urgency || 'HIGH'}</span>
                 <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 ml-2">
-                  Confidence: {aiRec.confidence || 87}%
+                  Confidence: {Number(aiRec.confidence ?? 87).toFixed(0)}%
                 </span>
               </div>
             </div>

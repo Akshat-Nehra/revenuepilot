@@ -34,8 +34,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Last attempt > 2 hours ago" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Amount ₹20,532 <= Max threshold ₹50,000" }
     ],
-    razorpayLinkId: "pl_L01abc987xyz",
-    razorpayUrl: "https://razorpay.com/pay/pl_L01abc987xyz"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00486",
@@ -65,8 +65,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Cleared" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Passed policy check" }
     ],
-    razorpayLinkId: "pl_Pri876xyz123",
-    razorpayUrl: "https://razorpay.com/pay/pl_Pri876xyz123"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00485",
@@ -96,8 +96,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Interval honored" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Passed" }
     ],
-    razorpayLinkId: "pl_Amt543qwe098",
-    razorpayUrl: "https://razorpay.com/pay/pl_Amt543qwe098"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00484",
@@ -127,8 +127,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Cleared" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Passed threshold" }
     ],
-    razorpayLinkId: "pl_Sne890lkj456",
-    razorpayUrl: "https://razorpay.com/pay/pl_Sne890lkj456"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00483",
@@ -158,8 +158,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Passed" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Approved for high value" }
     ],
-    razorpayLinkId: "pl_Vik123mnb789",
-    razorpayUrl: "https://razorpay.com/pay/pl_Vik123mnb789"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00482",
@@ -189,8 +189,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Cleared" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Passed" }
     ],
-    razorpayLinkId: "pl_Ana456poi098",
-    razorpayUrl: "https://razorpay.com/pay/pl_Ana456poi098"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "TXN_00481",
@@ -220,8 +220,8 @@ export const INITIAL_TRANSACTIONS = [
       { id: "g4", name: "No recent recovery attempt", status: "PASSED", detail: "Cleared" },
       { id: "g5", name: "Amount within recovery policy", status: "PASSED", detail: "Passed" }
     ],
-    razorpayLinkId: "pl_Kar789zxc321",
-    razorpayUrl: "https://razorpay.com/pay/pl_Kar789zxc321"
+    razorpayLinkId: null,
+    razorpayUrl: null
   }
 ];
 
@@ -237,8 +237,8 @@ export const INITIAL_RECOVERY_ATTEMPTS = [
     createdAt: hoursAgo(2),
     recoveredAt: null,
     recoveredAmount: 0,
-    razorpayLinkId: "pl_L01abc987xyz",
-    razorpayUrl: "https://razorpay.com/pay/pl_L01abc987xyz"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "ATT_9900",
@@ -251,8 +251,8 @@ export const INITIAL_RECOVERY_ATTEMPTS = [
     createdAt: hoursAgo(5),
     recoveredAt: hoursAgo(4.5),
     recoveredAmount: 12400,
-    razorpayLinkId: "pl_Pri876xyz123",
-    razorpayUrl: "https://razorpay.com/pay/pl_Pri876xyz123"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "ATT_9899",
@@ -265,8 +265,8 @@ export const INITIAL_RECOVERY_ATTEMPTS = [
     createdAt: hoursAgo(8),
     recoveredAt: null,
     recoveredAmount: 0,
-    razorpayLinkId: "pl_Amt543qwe098",
-    razorpayUrl: "https://razorpay.com/pay/pl_Amt543qwe098"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "ATT_9898",
@@ -279,8 +279,8 @@ export const INITIAL_RECOVERY_ATTEMPTS = [
     createdAt: hoursAgo(10),
     recoveredAt: hoursAgo(9.8),
     recoveredAmount: 54000,
-    razorpayLinkId: "pl_Vik123mnb789",
-    razorpayUrl: "https://razorpay.com/pay/pl_Vik123mnb789"
+    razorpayLinkId: null,
+    razorpayUrl: null
   },
   {
     id: "ATT_9897",
@@ -293,8 +293,8 @@ export const INITIAL_RECOVERY_ATTEMPTS = [
     createdAt: daysAgo(2),
     recoveredAt: daysAgo(2),
     recoveredAmount: 42100,
-    razorpayLinkId: "pl_Kar789zxc321",
-    razorpayUrl: "https://razorpay.com/pay/pl_Kar789zxc321"
+    razorpayLinkId: null,
+    razorpayUrl: null
   }
 ];
 

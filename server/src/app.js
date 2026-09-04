@@ -17,10 +17,18 @@ const webhookRoutes = require("./routes/webhook.routes");
 const { authenticate, authorize } = require("./middleware/auth.middleware");
 
 // CORS Configuration
-const allowedOrigin = process.env.FRONTEND_URL;
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:3000",
+  "http://localhost:5173",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: allowedOrigin ? [allowedOrigin, "http://localhost:3000", "http://localhost:5173"] : "*",
+    origin: (origin, callback) => {
+      if (!origin || configuredOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("CORS origin not allowed"));
+    },
     credentials: true,
   })
 );

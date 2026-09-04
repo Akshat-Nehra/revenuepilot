@@ -88,7 +88,7 @@ Seed demo users into your MongoDB instance using `npm run seed:users` from `reve
 - **Runtime**: Node.js & Express.js
 - **Database**: MongoDB & Mongoose
 - **Authentication**: Stateless JWT + `bcryptjs` password hashing
-- **AI Model**: Groq AI (`llama-3.3-70b-versatile`)
+- **AI Model**: Groq AI (configured by `GROQ_MODEL`, default `openai/gpt-oss-120b`)
 - **Payment & Webhooks**: Razorpay API & Webhook Verification (HMAC SHA256)
 
 ---
@@ -100,7 +100,7 @@ Seed demo users into your MongoDB instance using `npm run seed:users` from `reve
 PORT=5000
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/revenuepilot?retryWrites=true&w=majority
 GROQ_API_KEY=gsk_your_groq_api_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 RAZORPAY_KEY_ID=rzp_test_your_key_id_here
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret_here
 RAZORPAY_WEBHOOK_SECRET=your_razorpay_webhook_secret_here
@@ -114,6 +114,7 @@ FRONTEND_URL=http://localhost:3000
 ### Frontend (`frontend/.env`):
 ```env
 VITE_API_BASE_URL=http://localhost:5000
+VITE_DEMO_MODE=false
 ```
 
 ---
