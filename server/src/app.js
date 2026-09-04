@@ -17,19 +17,65 @@ const webhookRoutes = require("./routes/webhook.routes");
 const { authenticate, authorize } = require("./middleware/auth.middleware");
 
 // CORS Configuration
-const configuredOrigins = [
-  process.env.FRONTEND_URL,
-  "http://localhost:3000",
-  "http://localhost:5173",
-].filter(Boolean);
+const parseAllowedOrigins = () => {
+  const rawOrigins = [
+    process.env.FRONTEND_URL,
+    process.env.ALLOWED_ORIGINS,
+    "https://revenuepilot-blush.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+  ];
+
+  const origins = [];
+  rawOrigins.forEach((item) => {
+    if (!item) return;
+    item.split(",").forEach((origin) => {
+      const trimmed = origin.trim().replace(/\/+$/, "");
+      if (trimmed) origins.push(trimmed);
+    });
+  });
+
+  return Array.from(new Set(origins));
+};
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Allow non-browser requests (curl, Postman, server-to-server)
+  const cleanOrigin = origin.trim().replace(/\/+$/, "");
+  const allowedOrigins = parseAllowedOrigins();
+  
+  if (allowedOrigins.includes(cleanOrigin)) return true;
+  
+  // Allow all Vercel deployments (preview branches & production) and localhost origins
+  if (
+    /^https:\/\/.*\.vercel\.app$/.test(cleanOrigin) ||
+    /^https:\/\/revenuepilot(-[a-z0-9-]+)?\.vercel\.app$/.test(cleanOrigin) ||
+    /^http:\/\/localhost(:\d+)?$/.test(cleanOrigin) ||
+    /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(cleanOrigin)
+  ) {
+    return true;
+  }
+  
+  return false;
+};
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || configuredOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS origin not allowed"));
+      if (isOriginAllowed(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    exposedHeaders: ["Content-Range", "X-Content-Range"],
+    optionsSuccessStatus: 200,
+    maxAge: 86400,
   })
 );
 
