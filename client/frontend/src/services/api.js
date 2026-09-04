@@ -112,7 +112,14 @@ export async function apiRequest(endpoint, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const fullUrl = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  let fullUrl;
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    fullUrl = endpoint;
+  } else {
+    const base = (API_BASE_URL || '').replace(/\/+$/, '');
+    const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    fullUrl = `${base}${path}`;
+  }
 
   const headers = {
     'Content-Type': 'application/json',
