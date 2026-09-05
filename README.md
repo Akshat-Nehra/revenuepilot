@@ -5,6 +5,39 @@
 
 ---
 
+# RevenuePilot
+
+AI-powered revenue recovery and payment automation platform.
+
+### 🔗 Links
+
+- 🌐 **Live Demo:**   https://revenuepilot-blush.vercel.app
+- ⚙️ **Backend API:** https://revenuepilot-api.onrender.com
+- 🎥 **Demo Video:** https://youtu.be/lnpsAwT9dmg
+
+---
+
+## 📸 Screenshots
+
+###Login
+<img width="1358" height="686" alt="Login Page" src="https://github.com/user-attachments/assets/53b70bb5-f177-4243-93c0-d04331f0d10d" />
+
+### Dashboard
+<img width="1365" height="684" alt="Dashboard" src="https://github.com/user-attachments/assets/ff140d24-b79c-42b6-84b5-5ea4dc0adf4e" />
+
+### Recovery
+<img width="1365" height="638" alt="Recovery" src="https://github.com/user-attachments/assets/6c7fb336-db31-4dcc-a75a-0dcdeb6213f9" />
+
+### AI Review
+<img width="1365" height="633" alt="AI Decisions" src="https://github.com/user-attachments/assets/8a9f5977-1584-43f5-b335-ab7b512e2055" />
+
+
+### Analytics
+<img width="1365" height="639" alt="Metrics" src="https://github.com/user-attachments/assets/2c7d4784-15df-43b8-838a-84a6c077d1b2" />
+
+
+---
+
 ## 📌 Problem
 SaaS businesses and subscription platforms suffer massive, preventable revenue leakage due to failed payments, bank declines, and abandoned checkouts. Manual outreach is slow and traditional automated retries are rigid, blindly blasting customers without context or safety guardrails, resulting in involuntary churn and poor recovery conversion.
 
